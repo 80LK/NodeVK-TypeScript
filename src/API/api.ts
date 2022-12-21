@@ -1,40 +1,66 @@
-import { GroupSession, IMethodParams } from "../app.js";
-import VKAPIException from "../VKAPIException.js";
-import Session from "../Session/Session.js";
+import SessionConfig, { TypeToken } from "../Session/SessionConfig";
+import SingleOrArray from "../utils/SingleOrArray";
+import VKResponse from "./VKResponse";
 
-export type TypeSession = "user" | "group" | "app";
-
-export class InvokeMethodException extends Error {
-    public constructor(method_name: string, TypeSession: TypeSession, additional_message: string = "") {
-        super(`Don't call method ${method_name} with ${TypeSession} access token${additional_message ? " " + additional_message : ""}.`);
-    }
+interface ErrorMessageCallback {
+	(method: string, currentType: TypeToken, allowed: SingleOrArray<TypeToken>): string
 }
 
-export interface CountingResponse<T>{
-    count: number;
-    items: T[];
+function errorMessageCallback(method: string, currentType: TypeToken, allowed: SingleOrArray<TypeToken>): string {
+	let error = `Method "${method}" can't call with ${currentType} token.`;
+	if (Array.isArray(allowed)) {
+		if (allowed.length == 1) {
+			error += ` Allowed ${allowed[0]} type token.`;
+		} else if (allowed.length == 2) {
+			error += ` Allowed ${allowed.join(" and ")} types token.`;
+		} else {
+			const last_allowed = allowed.pop();
+			error += ` Allowed ${allowed.join(", ")} and ${last_allowed} types token.`;
+		}
+	} else {
+		error += ` Allowed ${allowed} type token.`;
+	}
+	return error;
 }
 
-export type SingleOrArray<T> = T | T[];
-export default abstract class API {
-    protected Session: Session;
-    protected type: TypeSession = "app";
+class API {
+	private static readonly API_URL: string = "https://api.vk.com/method/";
 
-    public constructor(Session: Session) {
-        this.Session = Session;
-        if (Session instanceof GroupSession)
-            this.type = "group";
-    }
+	constructor(private readonly config: SessionConfig, protected readonly type: TypeToken) { }
 
-    public checkValid(...types: TypeSession[]) {
-        return types.indexOf(this.type) != -1;
-    }
+	public async callMethod<T = any>(method: string, params: NodeJS.Dict<any>): Promise<T> {
+		const url = new URL(method, API.API_URL);
 
-    protected async call<T>(method: string, params: IMethodParams): Promise<T> {
-        const response = await this.Session.invokeMethod<T>(method, params);
-        if (response.error)
-            throw new VKAPIException(response.error);
+		url.searchParams.append("access_token", this.config.token);
+		url.searchParams.append("v", this.config.version);
 
-        return response.response;
-    }
+		for (const key in params) {
+			const value = params[key];
+			if (value === undefined) continue;
+
+			url.searchParams.append(key, value.toString())
+		}
+
+		const f_resp = await fetch(url, { method: "get" });
+		const response: VKResponse<T> = await f_resp.json();
+
+		if (response.error)
+			throw response.error;
+
+		return response.response;
+
+	}
+
+	public checkTypeToken(allowed: SingleOrArray<TypeToken>, method: string, error: ErrorMessageCallback | string = errorMessageCallback) {
+		if (
+			(Array.isArray(allowed) && allowed.includes(this.type))
+			|| this.type == allowed
+		) return true;
+
+		throw new ReferenceError(typeof error === "function" ? error(method, this.type, allowed) : error);
+	}
 }
+
+
+export default API;
+export { ErrorMessageCallback };

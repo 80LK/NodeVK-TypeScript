@@ -20,7 +20,7 @@
     "patch": "tsc -p tsconfig.json & npm version patch & npm publish",
     "minor": "tsc -p tsconfig.json & npm version minor & npm publish",
     "major": "tsc -p tsconfig.json & npm version major & npm publish",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-specifier-resolution=node lib/test/index.js"
   },
   "author": "80LK",
   "repository": {

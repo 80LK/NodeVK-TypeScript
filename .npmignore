@@ -1,5 +1,8 @@
 .vscode/*
 src/**/*
+lib/test/**/*
+config.json
+config.example.json
 
 .git
 .gitignore
